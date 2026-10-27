@@ -18,7 +18,7 @@ public struct RateLimitWindow: Equatable, Sendable {
     }
 }
 
-/// `~/.claude-usage-bar/limits.json` içeriği: status line script'inin son yazdığı `rate_limits`.
+/// Status line script'inin yazdığı `rate_limits` (`~/.claude-usage-bar/limits/<session_id>.json`).
 /// `rate_limits` yalnızca claude.ai Pro/Max girişinde ve oturumun ilk API yanıtından sonra gelir;
 /// pencereler birbirinden bağımsız olarak eksik olabilir.
 public struct StatusLineLimits: Equatable, Sendable {
@@ -55,6 +55,50 @@ public struct StatusLineLimits: Equatable, Sendable {
         let five = window("five_hour"), week = window("seven_day")
         guard five != nil || week != nil else { return nil }
         return StatusLineLimits(fiveHour: five, sevenDay: week, capturedAt: capturedAt)
+    }
+
+    /// Klasördeki tüm oturum dosyalarını okuyup birleştirir.
+    public static func loadDirectory(_ dir: URL) -> StatusLineLimits? {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return nil }
+        return merge(files.filter { $0.pathExtension == "json" }.compactMap(load(from:)))
+    }
+
+    /// Birden çok oturumun verisini birleştirir. Her Claude Code oturumu yalnızca kendi son API
+    /// yanıtındaki değeri bilir; boşta kalan bir oturumun değeri eskidir. Kurallar:
+    /// - Daha geç `resets_at` daha yeni penceredir ve tercih edilir.
+    /// - Aynı pencerede kullanım yalnızca artabilir; en yüksek yüzde en güncel olandır.
+    public static func merge(_ all: [StatusLineLimits]) -> StatusLineLimits? {
+        guard let first = all.first else { return nil }
+        return all.dropFirst().reduce(first) { acc, l in
+            StatusLineLimits(
+                fiveHour: mergeWindow(acc.fiveHour, l.fiveHour),
+                sevenDay: mergeWindow(acc.sevenDay, l.sevenDay),
+                capturedAt: max(acc.capturedAt, l.capturedAt))
+        }
+    }
+
+    /// `resets_at` değerleri bu kadar yakınsa aynı pencere sayılır.
+    static let sameWindowTolerance: TimeInterval = 120
+
+    static func mergeWindow(_ a: RateLimitWindow?, _ b: RateLimitWindow?) -> RateLimitWindow? {
+        guard let a else { return b }
+        guard let b else { return a }
+        if let ra = a.resetsAt, let rb = b.resetsAt, abs(ra.timeIntervalSince(rb)) >= sameWindowTolerance {
+            return ra > rb ? a : b
+        }
+        return a.usedPercentage >= b.usedPercentage ? a : b
+    }
+
+    /// Belirtilen süreden eski oturum dosyalarını siler (kapanmış oturumlar birikmesin).
+    public static func pruneDirectory(_ dir: URL, olderThan age: TimeInterval, now: Date = Date()) {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey], options: []) else { return }
+        for url in files {
+            let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if let mtime, now.timeIntervalSince(mtime) > age { try? fm.removeItem(at: url) }
+        }
     }
 
     public static func load(from url: URL) -> StatusLineLimits? {

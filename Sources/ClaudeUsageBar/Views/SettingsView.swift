@@ -64,7 +64,7 @@ struct SettingsView: View {
                 statusLineRow
                 Text("""
                 Claude Code'un status line ayarına küçük bir script bağlar. Script, Claude Code'un ona verdiği \
-                5 saatlik ve haftalık limit yüzdelerini ~/.claude-usage-bar/limits.json dosyasına yazar; \
+                5 saatlik ve haftalık limit yüzdelerini ~/.claude-usage-bar/limits/ klasörüne (oturum başına bir dosya) yazar; \
                 uygulama bu dosyayı okur. Yüzdeler yalnızca Claude Pro/Max girişinde ve Claude Code çalışırken güncellenir. \
                 ~/.claude/settings.json içinde yalnızca statusLine ayarı değişir ve önce yedek alınır.
                 """)

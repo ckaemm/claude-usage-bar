@@ -1,6 +1,7 @@
 import Foundation
 
-/// Claude Code'un `statusLine` ayarına, `rate_limits` verisini `limits.json`a yazan köprü script'ini bağlar.
+/// Claude Code'un `statusLine` ayarına, `rate_limits` verisini oturum başına `limits/<session_id>.json`a
+/// yazan köprü script'ini bağlar.
 ///
 /// - Mevcut bir `statusLine` varsa onay olmadan dokunmaz. Onay verilirse eski ayarı saklar ve
 ///   script eski komutu aynı girdiyle çalıştırıp çıktısını aynen basar (sarmalayıcı).
@@ -40,7 +41,11 @@ public struct StatusLineInstaller {
     }
 
     public var scriptURL: URL { supportDir.appendingPathComponent("statusline.sh") }
-    public var limitsURL: URL { supportDir.appendingPathComponent("limits.json") }
+    /// Her Claude Code oturumu kendi dosyasına yazar; böylece boşta kalan bir oturumun eski verisi
+    /// etkin oturumun güncel verisini ezemez. Uygulama dosyaları `StatusLineLimits.merge` ile birleştirir.
+    public var limitsDir: URL { supportDir.appendingPathComponent("limits", isDirectory: true) }
+    /// İlk sürümün tek dosyası; artık kullanılmıyor, kurulumda/kaldırmada silinir.
+    var legacyLimitsURL: URL { supportDir.appendingPathComponent("limits.json") }
     var originalCommandURL: URL { supportDir.appendingPathComponent("original-command") }
     var originalStatusLineURL: URL { supportDir.appendingPathComponent("original-statusline.json") }
     var backupURL: URL { supportDir.appendingPathComponent("settings.backup.json") }
@@ -74,6 +79,7 @@ public struct StatusLineInstaller {
 
         try prepareSupportDir()
         try writeScript()
+        try? FileManager.default.removeItem(at: legacyLimitsURL)
 
         if isOurs(existingCommand) { return } // zaten kurulu; script güncellendi
 
@@ -119,7 +125,7 @@ public struct StatusLineInstaller {
             try writeSettings(settings)
         }
         // Ayar elle değiştirilmişse settings.json'a dokunulmaz; yalnızca kendi dosyalarımız silinir.
-        for url in [scriptURL, originalCommandURL, originalStatusLineURL, limitsURL] {
+        for url in [scriptURL, originalCommandURL, originalStatusLineURL, limitsDir, legacyLimitsURL] {
             try? FileManager.default.removeItem(at: url)
         }
     }
@@ -150,9 +156,11 @@ public struct StatusLineInstaller {
     }
 
     public func prepareSupportDir() throws {
-        try FileManager.default.createDirectory(
-            at: supportDir, withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700])
+        for dir in [supportDir, limitsDir] {
+            try FileManager.default.createDirectory(
+                at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+        }
     }
 
     private func writeScript() throws {
@@ -167,15 +175,21 @@ public enum StatusLineScript {
     #!/bin/bash
     # Claude Usage Bar — status line köprüsü.
     # Claude Code'un status line JSON'unu stdin'den okur; "rate_limits" içeriyorsa
-    # ~/.claude-usage-bar/limits.json dosyasına atomik yazar (geçici dosya + mv).
+    # ~/.claude-usage-bar/limits/<session_id>.json dosyasına atomik yazar (geçici dosya + mv).
+    # Oturum başına ayrı dosya: boşta kalan bir oturumun eski verisi güncel veriyi ezemez.
     # Hiçbir hatada çıktı bozulmaz ve script her zaman 0 ile çıkar.
     dir="$HOME/.claude-usage-bar"
     input=$(cat 2>/dev/null)
 
     case "$input" in
       *'"rate_limits"'*)
-        tmp="$dir/.limits.json.$$"
-        { umask 077; printf '%s' "$input" > "$tmp" && mv -f "$tmp" "$dir/limits.json"; } 2>/dev/null \
+        sid=unknown
+        re='"session_id"[[:space:]]*:[[:space:]]*"([A-Za-z0-9_-]+)"'
+        [[ $input =~ $re ]] && sid="${BASH_REMATCH[1]}"
+        umask 077
+        [ -d "$dir/limits" ] || mkdir -p "$dir/limits" 2>/dev/null
+        tmp="$dir/limits/.$sid.json.$$"
+        { printf '%s' "$input" > "$tmp" && mv -f "$tmp" "$dir/limits/$sid.json"; } 2>/dev/null \
           || rm -f "$tmp" 2>/dev/null
         ;;
     esac

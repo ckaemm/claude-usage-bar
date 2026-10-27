@@ -83,10 +83,12 @@ final class AppModel: ObservableObject {
         reloadLimits()
     }
 
-    // MARK: - Plan limitleri (Claude Code status line → ~/.claude-usage-bar/limits.json)
+    // MARK: - Plan limitleri (Claude Code status line → ~/.claude-usage-bar/limits/<oturum>.json)
 
     private func startWatchingLimits() {
         try? installer.prepareSupportDir() // rename olaylarını yakalamak için klasör izlenir
+        // Haftalık pencereden eski oturum dosyalarına gerek yok.
+        StatusLineLimits.pruneDirectory(installer.limitsDir, olderThan: 8 * 86400)
         let w = FileWatcher(paths: [installer.supportDir.path], latency: 0.3) { [weak self] in
             Task { @MainActor in self?.reloadLimits() }
         }
@@ -96,7 +98,7 @@ final class AppModel: ObservableObject {
     }
 
     func reloadLimits() {
-        let l = StatusLineLimits.load(from: installer.limitsURL)
+        let l = StatusLineLimits.loadDirectory(installer.limitsDir)
         if l != limits { limits = l }
         checkThreshold()
     }

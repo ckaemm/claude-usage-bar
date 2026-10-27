@@ -83,13 +83,14 @@ let docExampleJSON = #"""
         let r = try run(inst, home: home, input: docExampleJSON)
         #expect(r.code == 0)
         #expect(r.out == "5s %24 · 7g %41\n")
-        let written = try String(contentsOf: inst.limitsURL, encoding: .utf8)
-        #expect(written == docExampleJSON)
-        let perms = try FileManager.default.attributesOfItem(atPath: inst.limitsURL.path)[.posixPermissions] as? Int
+        let file = inst.limitsDir.appendingPathComponent("abc123.json") // session_id'ye göre
+        #expect(try String(contentsOf: file, encoding: .utf8) == docExampleJSON)
+        let perms = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int
         #expect(perms == 0o600)
+        let dirPerms = try FileManager.default.attributesOfItem(atPath: inst.limitsDir.path)[.posixPermissions] as? Int
+        #expect(dirPerms == 0o700)
         // geçici dosya kalmamalı
-        let leftovers = try FileManager.default.contentsOfDirectory(atPath: inst.supportDir.path).filter { $0.hasPrefix(".limits") }
-        #expect(leftovers.isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: inst.limitsDir.path) == ["abc123.json"])
     }
 
     @Test func inputWithoutRateLimitsDoesNotOverwrite() throws {
@@ -98,7 +99,7 @@ let docExampleJSON = #"""
         let r = try run(inst, home: home, input: #"{"model":{"id":"x"}}"#)
         #expect(r.code == 0)
         #expect(r.out == "")
-        #expect(try String(contentsOf: inst.limitsURL, encoding: .utf8) == docExampleJSON)
+        #expect(try String(contentsOf: inst.limitsDir.appendingPathComponent("abc123.json"), encoding: .utf8) == docExampleJSON)
     }
 
     @Test func silentWhenDirectoryIsMissing() throws {
@@ -122,6 +123,20 @@ let docExampleJSON = #"""
         #expect(stderr.fileHandleForReading.readDataToEndOfFile().isEmpty)
     }
 
+    /// Hata senaryosu: boşta kalan bir oturum (eski %34) etkin oturumun güncel değerinden (%42)
+    /// sonra yazsa bile uygulama güncel değeri göstermeli.
+    @Test func idleSessionCannotOverwriteActiveSession() throws {
+        let (home, inst) = try setup()
+        func input(_ sid: String, _ five: Double, _ week: Double) -> String {
+            #"{"session_id":"\#(sid)","rate_limits":{"five_hour":{"used_percentage":\#(five),"resets_at":1793142000},"seven_day":{"used_percentage":\#(week),"resets_at":1793563200}}}"#
+        }
+        _ = try run(inst, home: home, input: input("active", 42, 19))
+        _ = try run(inst, home: home, input: input("idle", 34, 18))   // eski veri, sonra yazıldı
+        let l = try #require(StatusLineLimits.loadDirectory(inst.limitsDir))
+        #expect(l.fiveHour?.usedPercentage == 42)
+        #expect(l.sevenDay?.usedPercentage == 19)
+    }
+
     @Test func wrapsExistingCommandAndPreservesItsOutput() throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("slhome-\(UUID().uuidString)")
         let inst = StatusLineInstaller(
@@ -135,7 +150,56 @@ let docExampleJSON = #"""
 
         let r = try run(inst, home: home, input: docExampleJSON)
         #expect(r.out == "\"display_name\": \"Opus\"\n")
-        #expect(FileManager.default.fileExists(atPath: inst.limitsURL.path))
+        #expect(FileManager.default.fileExists(atPath: inst.limitsDir.appendingPathComponent("abc123.json").path))
+    }
+}
+
+@Suite struct StatusLineMergeTests {
+    let t = Date(timeIntervalSince1970: 1_793_140_000)
+
+    private func limits(_ five: Double?, resets: TimeInterval = 1_793_142_000, week: Double? = nil, at: Date) -> StatusLineLimits {
+        StatusLineLimits(
+            fiveHour: five.map { RateLimitWindow(usedPercentage: $0, resetsAt: Date(timeIntervalSince1970: resets)) },
+            sevenDay: week.map { RateLimitWindow(usedPercentage: $0, resetsAt: Date(timeIntervalSince1970: 1_793_563_200)) },
+            capturedAt: at)
+    }
+
+    @Test func sameWindowTakesHighestUsage() throws {
+        let m = try #require(StatusLineLimits.merge([limits(42, at: t), limits(34, at: t.addingTimeInterval(60))]))
+        #expect(m.fiveHour?.usedPercentage == 42)
+        #expect(m.capturedAt == t.addingTimeInterval(60))
+    }
+
+    @Test func newerWindowWinsEvenWithLowerUsage() throws {
+        // Eski pencere %90'da kalmış bir oturum; yeni pencerede kullanım %5.
+        let old = limits(90, resets: 1_793_124_000, at: t)
+        let new = limits(5, resets: 1_793_142_000, at: t)
+        #expect(StatusLineLimits.merge([old, new])?.fiveHour?.usedPercentage == 5)
+        #expect(StatusLineLimits.merge([new, old])?.fiveHour?.usedPercentage == 5)
+    }
+
+    @Test func smallResetJitterIsSameWindow() throws {
+        let a = limits(40, resets: 1_793_142_000, at: t)
+        let b = limits(41, resets: 1_793_142_030, at: t)
+        #expect(StatusLineLimits.merge([b, a])?.fiveHour?.usedPercentage == 41)
+    }
+
+    @Test func windowsMergeIndependently() throws {
+        let m = try #require(StatusLineLimits.merge([limits(42, at: t), limits(nil, week: 19, at: t)]))
+        #expect(m.fiveHour?.usedPercentage == 42)
+        #expect(m.sevenDay?.usedPercentage == 19)
+        #expect(StatusLineLimits.merge([]) == nil)
+    }
+
+    @Test func pruneRemovesOldSessionFiles() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("prune-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let old = dir.appendingPathComponent("old.json"), fresh = dir.appendingPathComponent("fresh.json")
+        try Data("{}".utf8).write(to: old)
+        try Data("{}".utf8).write(to: fresh)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-9 * 86400)], ofItemAtPath: old.path)
+        StatusLineLimits.pruneDirectory(dir, olderThan: 8 * 86400)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path) == ["fresh.json"])
     }
 }
 

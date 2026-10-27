@@ -101,7 +101,11 @@ Tarama artımlıdır: dosya başına okunan bayt ofseti tutulur, yalnızca yeni 
 **Nasıl çalışır:** Kurulum, `~/.claude-usage-bar/statusline.sh` köprü script'ini `~/.claude/settings.json` içindeki `statusLine` ayarına bağlar.
 
 - Script bağımlılık kullanmaz; saf bash'tir ve çağrı başına yaklaşık 10 ms sürer.
-- Girdide `rate_limits` varsa JSON'u `~/.claude-usage-bar/limits.json` dosyasına **atomik** yazar: önce geçici dosyaya yazar, sonra `mv` ile taşır. Dosya izni `0600` olur.
+- Girdide `rate_limits` varsa JSON'u **oturum başına ayrı** bir dosyaya, `~/.claude-usage-bar/limits/<session_id>.json`'a, **atomik** yazar: önce geçici dosyaya yazar, sonra `mv` ile taşır. Dosya izni `0600`, klasör izni `0700` olur.
+- Neden oturum başına dosya: Her Claude Code oturumu yalnızca kendi son API yanıtındaki yüzdeyi bilir. Tek dosya olsaydı, boşta duran bir oturum eski değeriyle (ör. %34) etkin oturumun güncel değerini (ör. %42) ezebilirdi. Uygulama tüm oturum dosyalarını birleştirir:
+  - Daha geç `resets_at` değeri daha yeni pencereyi gösterir ve o tercih edilir.
+  - Aynı pencerede kullanım yalnızca artabildiği için en yüksek yüzde alınır.
+  - 8 günden eski oturum dosyaları uygulama açılırken silinir.
 - `rate_limits` içermeyen girdiler (API anahtarlı oturum, ilk yanıttan önceki çağrılar) mevcut veriyi ezmez.
 - Hiçbir hatada çıktıyı bozmaz ve her zaman 0 koduyla çıkar.
 - Claude Code'un alt satırında `5s %23 · 7g %41` gösterir.
@@ -157,7 +161,7 @@ Limit verisi yoksa menü çubuğundaki yüzde modu `—` gösterir. Uygulama ken
 ## Gizlilik
 
 - Uygulama ağa hiç çıkmaz. Hiçbir veri, token veya log dışarı gönderilmez. Keychain'e erişilmez.
-- Okunan dosyalar: `~/.claude/projects/**/*.jsonl` ve `~/.claude-usage-bar/limits.json`.
+- Okunan dosyalar: `~/.claude/projects/**/*.jsonl` ve `~/.claude-usage-bar/limits/*.json`.
 - Yazılan dosyalar:
   - `~/Library/Application Support/ClaudeUsageBar/` (önbellek ve fiyat tablosu)
   - `~/.claude-usage-bar/` (köprü script'i ve limit verisi)
@@ -177,7 +181,7 @@ Sources/UsageCore/          UI'sız çekirdek (test edilebilir)
   UsageStore.swift          tekilleştirme + cost-state ekleri
   Aggregation.swift         bugün/hafta/ay, 7 gün, model ailesi
   Pricing.swift             düzenlenebilir fiyat tablosu
-  StatusLineLimits.swift    status line rate_limits modeli (limits.json)
+  StatusLineLimits.swift    status line rate_limits modeli, oturumların birleştirilmesi
   StatusLineInstaller.swift köprü script'i + settings.json kurulum/kaldırma
   UsageEngine.swift         arka plan aktörü + disk önbelleği
 Sources/ClaudeUsageBar/     SwiftUI uygulaması (MenuBarExtra, ayarlar, FSEvents, bildirimler)
