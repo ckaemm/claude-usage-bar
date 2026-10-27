@@ -1,72 +1,50 @@
 # Claude Usage Bar
 
-Claude planınızın **5 saatlik oturum** ve **haftalık** limit yüzdelerini macOS menü çubuğunda gösteren native bir uygulama (Swift + SwiftUI, macOS 13+).
-Her şey yerelde çalışır. Uygulama ağa hiç çıkmaz ve hiçbir veriyi dışarı göndermez.
+Claude Pro/Max planınızın **5 saatlik oturum** ve **haftalık** limit yüzdelerini macOS menü çubuğunda gösteren küçük, native bir uygulama.
 
-- **Menü çubuğu:** `5s %46 · 7g %19`. Ayarlardan yalnızca 5 saatlik yüzde ya da yalnızca ikon seçilebilir.
-- **Popover:** İki limit için yüzde çubuğu, sıfırlanmaya geri sayım ve son güncelleme zamanı.
+![Menü çubuğu](docs/menubar.png)
+
+<p>
+  <img src="docs/popover.png" width="320" alt="Popover (açık tema)">
+  <img src="docs/popover-dark.png" width="320" alt="Popover (koyu tema)">
+</p>
+
+- **Menü çubuğunda** iki yüzde birden (`5s %47 · 7g %19`), yalnızca 5 saatlik yüzde ya da yalnızca ikon.
+- **Popover'da** her limit için yüzde çubuğu, sıfırlanmaya geri sayım ve son güncelleme zamanı.
 - **Eşik bildirimi:** Örneğin %80 geçildiğinde, her pencere için bir kez.
-- **Diğer ayarlar:** login'de başlatma, Claude Code status line köprüsünü tek tıkla kurma/kaldırma.
+- **Login'de otomatik başlatma** (`SMAppService`).
+- **Tamamen yerel:** Ağ erişimi yok, telemetri yok, harici bağımlılık yok.
 
-Yüzdeler Claude Code'un kendi status line verisinden gelir; uygulama tahmin yapmaz.
+Yüzdeler doğrudan Claude Code'un status line'a verdiği limit verisinden gelir; uygulama kendi tahminini üretmez.
 
 ## Gereksinimler
 
 - macOS 13 Ventura veya üstü
 - Swift 6 araç zinciri: Xcode **ya da** yalnızca Command Line Tools (`xcode-select --install`)
-- Harici bağımlılık yoktur.
+- [Claude Code](https://code.claude.com), claude.ai **Pro veya Max** hesabıyla giriş yapılmış olarak
 
-## Derleme ve çalıştırma
-
-```bash
-./build.sh              # release derler, build/ClaudeUsageBar.app üretir (ad-hoc imzalı)
-open build/ClaudeUsageBar.app
-```
-
-`/Applications` altına kurmak için:
+## Kurulum
 
 ```bash
-./build.sh --install
+git clone https://github.com/ckaemm/claude-usage-bar.git
+cd claude-usage-bar
+./build.sh --install                 # derler ve /Applications/ClaudeUsageBar.app olarak kurar
 open /Applications/ClaudeUsageBar.app
 ```
 
-Ardından status line köprüsünü kurun (bkz. [Veri kaynağı](#veri-kaynağı-claude-code-status-line)):
-Menü çubuğu ikonu › ⚙︎ Ayarlar › Claude Code bağlantısı › **Kur**.
+Ardından menü çubuğu ikonu › ⚙︎ **Ayarlar › Claude Code bağlantısı › Kur**. Claude Code'da bir mesaj gönderdiğinizde yüzdeler gelmeye başlar.
 
-Uygulama Dock'ta görünmez (`LSUIElement`); yalnızca menü çubuğunda yaşar. Kapatmak için popover'daki ⏻ butonunu kullanın veya ⌘Q'ya basın.
+Uygulama Dock'ta görünmez, yalnızca menü çubuğunda yaşar. Kapatmak için popover'daki ⏻ butonuna basın ya da ⌘Q kullanın.
 
-Geliştirme sırasında:
+### Login'de otomatik başlatma
 
-```bash
-swift build && .build/debug/ClaudeUsageBar          # uygulamayı paketlemeden çalıştırır (bildirimler devre dışı)
-.build/debug/ClaudeUsageBar --dump                   # terminalde yerel log token özeti (bkz. aşağıda)
-./test.sh                                            # gizlilik kontrolü + birim testleri (Swift Testing)
-```
+**Ayarlar › Login'de otomatik başlat** seçeneğini açın. macOS onay isterse **Sistem Ayarları › Genel › Giriş Öğeleri** sayfasından izin verin; ayarlardaki "Aç" butonu sizi doğrudan oraya götürür.
 
-> `test.sh`, yalnızca Command Line Tools kurulu makinelerde `swift test` Swift Testing testlerini
-> bulamadığı için testleri küçük bir çalıştırıcıyla başlatır. Xcode kuruluysa düz `swift test` kullanılır.
+Elle eklemek için: **Sistem Ayarları › Genel › Giriş Öğeleri** sayfasında "Oturum Açıldığında Aç" listesindeki **+** butonuna basın ve `/Applications/ClaudeUsageBar.app` uygulamasını seçin.
 
-## Login'de otomatik başlatma (Login Items)
+## Nasıl çalışır
 
-**Yöntem 1: uygulama içinden (önerilen)**
-
-1. Uygulamayı `/Applications` altına kurun: `./build.sh --install`.
-2. `/Applications/ClaudeUsageBar.app` uygulamasını açın.
-3. Menü çubuğu ikonu › ⚙︎ Ayarlar › **Login'de otomatik başlat** seçeneğini açın.
-4. macOS onay isterse **Sistem Ayarları › Genel › Giriş Öğeleri**'nden uygulamaya izin verin. Ayarlardaki "Aç" butonu bu sayfaya götürür.
-
-Bu yöntem `SMAppService.mainApp` kullanır. Uygulamayı yeniden derleyip kurduktan sonra seçeneği bir kez kapatıp açmanız gerekebilir.
-
-**Yöntem 2: elle**
-
-1. **Sistem Ayarları › Genel › Giriş Öğeleri** sayfasını açın.
-2. "Oturum Açıldığında Aç" listesindeki **+** butonuna basın.
-3. `/Applications/ClaudeUsageBar.app` uygulamasını seçin.
-
-## Veri kaynağı: Claude Code status line
-
-
-5 saatlik oturum ve haftalık limit yüzdeleri, Claude Code'un [status line](https://code.claude.com/docs/en/statusline) mekanizmasından gelir. Claude Code, status line script'ine stdin üzerinden bir JSON gönderir. Bu JSON'daki ilgili alanlar şunlardır (şema resmi dokümandan doğrulandı):
+Claude Code, [status line](https://code.claude.com/docs/en/statusline) script'ine her güncellemede stdin üzerinden bir JSON gönderir. Bu JSON plan limitlerini de içerir:
 
 ```json
 "rate_limits": {
@@ -75,96 +53,94 @@ Bu yöntem `SMAppService.mainApp` kullanır. Uygulamayı yeniden derleyip kurduk
 }
 ```
 
-- `used_percentage` 0–100 arası bir sayıdır. `resets_at` Unix epoch saniyesidir.
-- `rate_limits` yalnızca **claude.ai Pro/Max** girişinde ve oturumdaki ilk API yanıtından sonra gelir. **API anahtarıyla girişte hiç gelmez.**
-- Pencereler ayrı ayrı eksik olabilir. Claude Code, `resets_at` zamanı geçen pencereyi JSON'dan çıkarır.
-- Status line API token'ı harcamaz.
+`used_percentage` 0–100 arası bir sayıdır. `resets_at` ise Unix epoch saniyesidir.
 
-**Nasıl çalışır:** Kurulum, `~/.claude-usage-bar/statusline.sh` köprü script'ini `~/.claude/settings.json` içindeki `statusLine` ayarına bağlar.
+```
+Claude Code ──stdin JSON──▶ ~/.claude-usage-bar/statusline.sh ──▶ ~/.claude-usage-bar/limits/<session_id>.json
+                                                                              │
+                                              Claude Usage Bar ◀──FSEvents────┘
+```
 
-- Script bağımlılık kullanmaz; saf bash'tir ve çağrı başına yaklaşık 10 ms sürer.
-- Girdide `rate_limits` varsa JSON'u **oturum başına ayrı** bir dosyaya, `~/.claude-usage-bar/limits/<session_id>.json`'a, **atomik** yazar: önce geçici dosyaya yazar, sonra `mv` ile taşır. Dosya izni `0600`, klasör izni `0700` olur.
-- Neden oturum başına dosya: Her Claude Code oturumu yalnızca kendi son API yanıtındaki yüzdeyi bilir. Tek dosya olsaydı, boşta duran bir oturum eski değeriyle (ör. %34) etkin oturumun güncel değerini (ör. %42) ezebilirdi. Uygulama tüm oturum dosyalarını birleştirir:
-  - Daha geç `resets_at` değeri daha yeni pencereyi gösterir ve o tercih edilir.
-  - Aynı pencerede kullanım yalnızca artabildiği için en yüksek yüzde alınır.
-  - 8 günden eski oturum dosyaları uygulama açılırken silinir.
-- `rate_limits` içermeyen girdiler (API anahtarlı oturum, ilk yanıttan önceki çağrılar) mevcut veriyi ezmez.
-- Hiçbir hatada çıktıyı bozmaz ve her zaman 0 koduyla çıkar.
-- Claude Code'un alt satırında `5s %23 · 7g %41` gösterir.
-- Uygulama `~/.claude-usage-bar` klasörünü FSEvents ile izler. Yüzdeler ve geri sayım bu dosyadan hesaplanır.
-- Dosya yoksa veya veri 15 dakikadan eskiyse kartta **"Claude Code çalışırken güncellenir"** notu çıkar. Claude Code kapalıyken veri güncellenmez.
+**Kur** butonu, küçük bir bash script'ini `~/.claude/settings.json` içindeki `statusLine` ayarına bağlar. Script'in özellikleri:
 
-**Kurulum ve kaldırma**
+- **Bağımlılık yok:** Saf bash, çağrı başına yaklaşık 10 ms.
+- **Oturum başına dosya:** Girdide `rate_limits` varsa JSON'u o oturuma ait dosyaya atomik olarak yazar (geçici dosya + `mv`, izin `0600`).
+- **Sessiz hata:** Hiçbir hatada çıktıyı bozmaz, her zaman 0 koduyla çıkar.
+- **Claude Code içinde özet:** Alt satırda `5s %23 · 7g %41` gösterir.
 
-- Uygulamada: Ayarlar › Claude Code bağlantısı › **Kur** / **Kaldır**.
-- Terminalde:
+**Neden oturum başına dosya?** Her Claude Code oturumu yalnızca kendi son yanıtındaki yüzdeyi bilir. Tek bir dosya olsaydı, boşta duran bir oturum eski değeriyle güncel değeri ezebilirdi. Uygulama bu yüzden tüm oturum dosyalarını birleştirir:
 
-  ```bash
-  build/ClaudeUsageBar.app/Contents/MacOS/ClaudeUsageBar --install-statusline
-  build/ClaudeUsageBar.app/Contents/MacOS/ClaudeUsageBar --uninstall-statusline
-  ```
+- Daha geç `resets_at` değeri daha yeni bir pencere demektir; o tercih edilir.
+- Aynı pencere içinde kullanım yalnızca artabilir; en yüksek yüzde alınır.
+- 8 günden eski oturum dosyaları uygulama açılırken silinir.
 
-Kurulum sırasında:
+### Kurulumun dokunduğu yerler
 
 - `settings.json` içinde **yalnızca** `statusLine` anahtarı değişir. Önce `~/.claude-usage-bar/settings.backup.json` adıyla yedek alınır.
 - Dosya geçerli JSON değilse kurulum hiçbir şeye dokunmadan durur.
-- Not: Dosya yeniden yazılırken anahtarlar alfabetik sıraya girer ve dosya biçimlenir. İçerik değişmez.
+- Not: Dosya yeniden yazılırken anahtarlar alfabetik sıraya girer; içerik değişmez.
 
 **Zaten bir status line'ınız varsa:**
 
-- Kurulum üzerine yazmaz; önce onay ister. Terminalde onay için `--wrap` bayrağını ekleyin: `--install-statusline --wrap`.
-- Onay verirseniz script önce mevcut komutunuzu aynı girdiyle çalıştırır ve onun çıktısını aynen gösterir. Limit verisini de ayrıca kaydeder.
-- Eski ayarın `padding`, `refreshInterval` gibi alanları korunur.
-- **Kaldır** eski ayarı olduğu gibi geri yükler. Status line'ı sonradan elle değiştirdiyseniz kaldırma `settings.json`'a dokunmaz.
+- Kurulum üzerine yazmaz, önce onay ister.
+- Onay verirseniz script önce sizin komutunuzu aynı girdiyle çalıştırır ve onun çıktısını aynen gösterir; limit verisini de ayrıca kaydeder.
+- `padding`, `refreshInterval` gibi alanlar korunur.
+- **Kaldır** eski ayarı olduğu gibi geri yükler.
 
-Not: Claude Code, özel bir status line tanımlandığında alt bilgideki bazı ipuçlarını (`esc to interrupt`, `? for shortcuts`) gizler.
-
-**"Claude Code çalışırken güncellenir"** notu: Limit verisi yok ya da 15 dakikadan eski. Yüzdeler yalnızca Claude Code çalışırken yenilenir. Veri yoksa menü çubuğunda `—` görünür.
-
-## Terminalde token özeti (`--dump`)
-
-Uygulama arayüzde token veya maliyet göstermez. İsterseniz yerel Claude Code loglarından bir özeti terminalde alabilirsiniz:
+Terminalden kurmak veya kaldırmak için:
 
 ```bash
-build/ClaudeUsageBar.app/Contents/MacOS/ClaudeUsageBar --dump
+/Applications/ClaudeUsageBar.app/Contents/MacOS/ClaudeUsageBar --install-statusline   # mevcut status line'ı sarmalamak için --wrap ekleyin
+/Applications/ClaudeUsageBar.app/Contents/MacOS/ClaudeUsageBar --uninstall-statusline
 ```
 
-Bu komut `~/.claude/projects/**/*.jsonl` dosyalarını bir kez tarar, bugün/hafta/ay toplamlarını ve API liste fiyatlarıyla hesaplanmış tahmini maliyeti yazdırır.
+> Claude Code, özel bir status line tanımlandığında alt bilgideki bazı ipuçlarını (`esc to interrupt`, `? for shortcuts`) gizler.
 
-- Claude Code bir yanıtın her içerik bloğunu ayrı satıra yazar ve aynı usage'ı tekrar eder. Bu yüzden kayıtlar `message.id:requestId` ile tekilleştirilir; ccusage da aynı yaklaşımı kullanır.
-- Fiyatlar `PricingTable.defaultJSON` içindedir (USD / 1M token). `~/Library/Application Support/ClaudeUsageBar/pricing.json` varsa o kullanılır.
+## Bilinmesi gerekenler
+
+- **Güncelleme zamanı:** Yüzdeler yalnızca Claude Code çalışırken güncellenir. Veri 15 dakikadan eskiyse popover'da "Claude Code çalışırken güncellenir" notu çıkar.
+- **API anahtarıyla giriş:** `rate_limits` yalnızca claude.ai Pro/Max girişinde gelir. API anahtarıyla girişte bu alanlar hiç gelmez; menü çubuğunda `—` görünür.
+- **Sıfırlanan pencere:** Pencere sıfırlandığında, yeni değer Claude Code'daki bir sonraki yanıtla gelir.
 
 ## Gizlilik
 
-- Uygulama ağa hiç çıkmaz. Hiçbir veri, token veya log dışarı gönderilmez. Keychain'e erişilmez.
-- Uygulamanın okuduğu dosyalar: yalnızca `~/.claude-usage-bar/limits/*.json`. Loglar yalnızca `--dump` komutunda okunur.
-- Yazılan dosyalar:
-  - `~/.claude-usage-bar/` (köprü script'i ve limit verisi)
-  - Kurulum sırasında `~/.claude/settings.json` içindeki `statusLine` anahtarı
-- `./test.sh`, kaynak kodda `URLSession`, `URLRequest`, `Network`, `Security` veya `SecItem` kullanımı bulursa başarısız olur.
-- Telemetri, analitik ve üçüncü taraf bağımlılık yoktur.
+- Uygulama ağa hiç çıkmaz ve Keychain'e erişmez. `./test.sh`, kaynak kodda `URLSession`, `URLRequest`, `Network`, `Security` veya `SecItem` kullanımı bulursa başarısız olur.
+- **Okunan:** `~/.claude-usage-bar/limits/*.json`.
+- **Yazılan:** `~/.claude-usage-bar/` klasörü ve kurulumda `~/.claude/settings.json` içindeki `statusLine` anahtarı.
 
-## Proje yapısı
+## Geliştirme
 
-```
-Package.swift
-build.sh, test.sh
-Resources/Info.plist
-Sources/UsageCore/          UI'sız çekirdek (test edilebilir)
-  StatusLineLimits.swift    status line rate_limits modeli, oturumların birleştirilmesi
-  StatusLineInstaller.swift köprü script'i + settings.json kurulum/kaldırma
-  --- yalnızca --dump için ---
-  LogParser.swift           JSONL satırı → UsageEntry / SessionCostState
-  IncrementalScanner.swift  dosya başına ofset ile artımlı okuma
-  UsageStore.swift          tekilleştirme + cost-state ekleri
-  Aggregation.swift         bugün/hafta/ay, 7 gün, model ailesi
-  Pricing.swift             fiyat tablosu
-  UsageEngine.swift         tarama motoru
-Sources/ClaudeUsageBar/     SwiftUI uygulaması (MenuBarExtra, ayarlar, FSEvents, bildirimler)
-Tests/UsageCoreTests/       Swift Testing; Fixtures/ gerçek bir oturumdan alınmış, içeriği temizlenmiş veri
+```bash
+swift build && .build/debug/ClaudeUsageBar   # paketlemeden çalıştırır (bildirimler yalnızca .app içinde çalışır)
+./build.sh                                   # build/ClaudeUsageBar.app (ad-hoc imzalı)
+./test.sh                                    # gizlilik kontrolü + Swift Testing testleri
 ```
 
-## Bilinen sınırlamalar
+`test.sh`, yalnızca Command Line Tools kurulu makinelerde `swift test` Swift Testing testlerini bulamadığı için testleri küçük bir çalıştırıcıyla başlatır. Xcode kuruluysa düz `swift test` kullanılır.
 
-- Plan limiti yüzdeleri yalnızca Claude Code çalışırken güncellenir; Claude Code kapalıyken son bilinen değer "x dk önce" notuyla gösterilir.
-- `rate_limits` alanı API anahtarıyla girişte gelmez; bu durumda uygulama yüzde gösteremez.
+### Ek: terminalde token özeti
+
+```bash
+/Applications/ClaudeUsageBar.app/Contents/MacOS/ClaudeUsageBar --dump
+```
+
+`~/.claude/projects/**/*.jsonl` loglarını bir kez tarar. Bugün, bu hafta ve bu ay için token toplamlarını ve API liste fiyatlarıyla hesaplanmış tahmini maliyeti yazdırır.
+
+Claude Code bir yanıtın her içerik bloğunu ayrı satıra yazar ve aynı kullanım bilgisini tekrar eder. Bu yüzden kayıtlar `message.id:requestId` ile tekilleştirilir.
+
+### Proje yapısı
+
+```
+Sources/UsageCore/            UI'sız, test edilebilir çekirdek
+  StatusLineLimits.swift      rate_limits modeli, oturumların birleştirilmesi
+  StatusLineInstaller.swift   köprü script'i, settings.json kurulum/kaldırma
+  LogParser.swift, IncrementalScanner.swift, UsageStore.swift,
+  Aggregation.swift, Pricing.swift, UsageEngine.swift    --dump için log taraması
+Sources/ClaudeUsageBar/       SwiftUI uygulaması (MenuBarExtra, ayarlar, FSEvents, bildirimler)
+Tests/UsageCoreTests/         Swift Testing testleri
+build.sh, test.sh             derleme ve test script'leri
+```
+
+---
+
+Bu proje Anthropic ile bağlantılı değildir. "Claude" ve "Claude Code", Anthropic'in ürünleridir.
