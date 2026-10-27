@@ -1,10 +1,10 @@
 import Foundation
 import UserNotifications
 
-/// Eşik uyarıları. Her pencere için en fazla bir bildirim gönderir.
+/// Eşik uyarıları. Her limit penceresi (adı + sıfırlanma zamanı) için en fazla bir bildirim gönderir.
 @MainActor
 final class Notifier {
-    private let lastKeyDefaultsKey = "lastAlertWindowKey"
+    private let notifiedKeysDefaultsKey = "notifiedLimitWindows"
 
     /// `.app` paketi dışında (ör. `swift run`) UNUserNotificationCenter kullanılamaz.
     private var available: Bool { Bundle.main.bundleIdentifier != nil && Bundle.main.bundlePath.hasSuffix(".app") }
@@ -14,22 +14,24 @@ final class Notifier {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
-    /// - Parameters:
-    ///   - windowKey: pencereyi tekil tanımlayan anahtar (ör. sıfırlanma zamanı).
-    ///   - isEstimate: yüzde yerel tahminse metinde belirtilir.
-    func check(percent: Double, threshold: Double, windowKey: String, isEstimate: Bool) {
+    func check(window: String, percent: Double, threshold: Double, resetsAt: Date?) {
         guard available, percent >= threshold else { return }
+        let key = "\(window)|\(resetsAt.map { Int($0.timeIntervalSince1970) } ?? 0)"
         let defaults = UserDefaults.standard
-        guard defaults.string(forKey: lastKeyDefaultsKey) != windowKey else { return }
-        defaults.set(windowKey, forKey: lastKeyDefaultsKey)
+        var notified = defaults.stringArray(forKey: notifiedKeysDefaultsKey) ?? []
+        guard !notified.contains(key) else { return }
+        notified.append(key)
+        defaults.set(Array(notified.suffix(20)), forKey: notifiedKeysDefaultsKey)
 
         let content = UNMutableNotificationContent()
-        content.title = "Claude kullanımı %\(Int(percent.rounded()))"
-        content.body = isEstimate
-            ? "Tahmini 5 saatlik pencere kullanımı %\(Int(threshold)) eşiğini geçti (geçmiş en yüksek bloğa göre)."
-            : "5 saatlik oturum limitinin %\(Int(threshold)) eşiği geçildi (resmi olmayan veri)."
+        content.title = "Claude: \(window) limiti %\(Int(percent.rounded()))"
+        var body = "%\(Int(threshold)) eşiği geçildi."
+        if let resetsAt {
+            body += " Sıfırlanma: \(resetsAt.formatted(date: .abbreviated, time: .shortened))."
+        }
+        content.body = body
         content.sound = .default
-        let req = UNNotificationRequest(identifier: "threshold-\(windowKey)", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(req)
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: "threshold-\(key)", content: content, trigger: nil))
     }
 }
