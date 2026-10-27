@@ -8,6 +8,10 @@ struct PopoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+            if model.snapshot.entryCount == 0, model.lastUpdated != nil, !model.isRefreshing {
+                Label("Henüz Claude Code kullanım logu bulunamadı (~/.claude/projects).", systemImage: "tray")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             WindowCard()
             PeriodTiles(snapshot: model.snapshot)
             Divider()
