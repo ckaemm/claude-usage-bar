@@ -17,9 +17,6 @@ if CommandLine.arguments.contains("--dump") {
                 print("   \(fam.rawValue): \(ft.totalTokens) token ≈ $\(String(format: "%.4f", ft.costUSD))")
             }
         }
-        if let b = s.currentBlock {
-            print("Etkin 5 sa blok: \(b.start) → \(b.end), \(b.totals.totalTokens) token, tepe oranı \(b.fractionOfPeakBlock.map { String(format: "%.0f%%", $0 * 100) } ?? "-")")
-        }
         exit(0)
     }
     dispatchMain()

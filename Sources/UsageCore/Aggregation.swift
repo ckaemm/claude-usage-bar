@@ -48,13 +48,12 @@ public struct UsageSnapshot: Sendable {
     public var generatedAt: Date
     public var periods: [Period: PeriodSummary]
     public var last7Days: [DayBucket]
-    public var currentBlock: SessionBlock?
     public var entryCount: Int
     public var malformedLines: Int
     public var hasSupplementalData: Bool
 
     public static let empty = UsageSnapshot(
-        generatedAt: .distantPast, periods: [:], last7Days: [], currentBlock: nil,
+        generatedAt: .distantPast, periods: [:], last7Days: [],
         entryCount: 0, malformedLines: 0, hasSupplementalData: false)
 
     public func summary(_ p: Period) -> PeriodSummary { periods[p] ?? PeriodSummary(period: p) }
@@ -99,10 +98,8 @@ public enum Aggregator {
             }
         }
 
-        let blocks = SessionBlocks.compute(entries: Array(store.entries.values), pricing: pricing)
         return UsageSnapshot(
             generatedAt: now, periods: periods, last7Days: days,
-            currentBlock: SessionBlocks.current(blocks, now: now),
             entryCount: store.entries.count, malformedLines: malformedLines,
             hasSupplementalData: !supplements.isEmpty)
     }

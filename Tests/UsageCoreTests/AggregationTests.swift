@@ -85,36 +85,3 @@ import Testing
         #expect(s.costStates["s"]?.modelUsage["claude-haiku-5-5"]?.costUSD == 0.2)
     }
 }
-
-@Suite struct SessionBlockTests {
-    private func date(_ s: String) -> Date { LogParser().parseDate(s)! }
-
-    private func entry(_ id: String, _ ts: String, output: Int = 1000) -> UsageEntry {
-        UsageEntry(key: id, timestamp: date(ts), model: "claude-opus-5-5", sessionId: "s",
-                   inputTokens: 0, outputTokens: output, cacheWrite5mTokens: 0,
-                   cacheWrite1hTokens: 0, cacheReadTokens: 0)
-    }
-
-    @Test func blocksStartOnHourAndSplitAfterFiveHoursOrGap() {
-        let blocks = SessionBlocks.compute(entries: [
-            entry("a", "2026-10-28T01:17:00Z"),
-            entry("b", "2026-10-28T05:59:00Z"),  // aynı blok (01:00–06:00)
-            entry("c", "2026-10-28T06:01:00Z"),  // blok süresi doldu → yeni blok 06:00
-            entry("d", "2026-10-28T12:30:00Z"),  // yeni blok 12:00
-        ], pricing: .default)
-        #expect(blocks.map(\.start) == [date("2026-10-28T01:00:00Z"), date("2026-10-28T06:00:00Z"), date("2026-10-28T12:00:00Z")])
-        #expect(blocks[0].totals.messageCount == 2)
-        #expect(blocks[0].end == date("2026-10-28T06:00:00Z"))
-    }
-
-    @Test func currentBlockAndPeakFraction() throws {
-        let blocks = SessionBlocks.compute(entries: [
-            entry("old", "2026-10-27T01:00:00Z", output: 4000),
-            entry("now", "2026-10-28T10:10:00Z", output: 1000),
-        ], pricing: .default)
-        let cur = try #require(SessionBlocks.current(blocks, now: date("2026-10-28T11:00:00Z")))
-        #expect(cur.start == date("2026-10-28T10:00:00Z"))
-        #expect(cur.fractionOfPeakBlock == 0.25)
-        #expect(SessionBlocks.current(blocks, now: date("2026-10-28T15:00:01Z")) == nil)
-    }
-}

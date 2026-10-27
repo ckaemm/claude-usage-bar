@@ -66,27 +66,8 @@ struct SettingsView: View {
                     Text("%\(Int(settings.alertThreshold))").monospacedDigit().frame(width: 44, alignment: .trailing)
                 }
                 .disabled(!settings.alertEnabled)
-                Text("5 saatlik pencere yüzdesine göre. Plan limitleri kapalıysa yüzde yerel bir tahmindir (geçmiş en yüksek bloğa oran).")
+                Text("5 saatlik pencere yüzdesine göre.")
                     .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section {
-                Toggle("Plan limitlerini göster (resmi değil)", isOn: $settings.planLimitsEnabled)
-                Text("""
-                Claude Code'un kullandığı belgelenmemiş bir uç noktadan (api.anthropic.com) 5 saatlik ve haftalık limit yüzdelerini alır. \
-                Açıldığında macOS, Keychain'deki "Claude Code-credentials" öğesine erişim için izin ister. Token yalnızca bellekte tutulur, \
-                diske yazılmaz, loglanmaz ve başka bir yere gönderilmez. Uç nokta her an değişebilir; başarısız olursa uygulama yerel verilerle çalışmaya devam eder.
-                """)
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                if settings.planLimitsEnabled, let err = model.planLimitError {
-                    Label(err, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
-                } else if settings.planLimitsEnabled, let l = model.planLimits {
-                    Text("Son alındı: \(l.fetchedAt.formatted(date: .omitted, time: .standard))")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("Plan limitleri")
             }
 
             Section("Veri") {

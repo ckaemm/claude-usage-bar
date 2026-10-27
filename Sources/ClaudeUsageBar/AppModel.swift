@@ -9,8 +9,6 @@ final class AppModel: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var pricingError: String?
-    @Published private(set) var planLimits: PlanLimits?
-    @Published private(set) var planLimitError: String?
 
     let settings = AppSettings()
 
@@ -21,13 +19,9 @@ final class AppModel: ObservableObject {
     private var pricing: PricingTable = .default
     private var pricingModified: Date?
     private var cancellables: Set<AnyCancellable> = []
-    private let planClient = PlanLimitClient()
     private let notifier = Notifier()
-    private var planFetchInFlight = false
-    private var nextPlanFetch = Date.distantPast
 
     init() {
-        lastPlanLimitsEnabled = settings.planLimitsEnabled
         ensurePricingFile()
         startWatching()
         scheduleTimer()
@@ -77,47 +71,11 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func didUpdate() {
-        fetchPlanLimitsIfDue()
-        checkThreshold()
-    }
-
-    // MARK: - Plan limitleri (resmi değil, varsayılan kapalı)
-
-    private func fetchPlanLimitsIfDue() {
-        guard settings.planLimitsEnabled, !planFetchInFlight, Date() >= nextPlanFetch else { return }
-        planFetchInFlight = true
-        Task {
-            do {
-                let limits = try await planClient.fetch()
-                self.planLimits = limits
-                self.planLimitError = nil
-                self.nextPlanFetch = Date().addingTimeInterval(max(60, settings.refreshInterval))
-            } catch {
-                // Başarısızlıkta yerel veriyle devam; 5 dk sonra yeniden dene.
-                self.planLimits = nil
-                self.planLimitError = (error as? LocalizedError)?.errorDescription ?? "Plan limitleri alınamadı."
-                self.nextPlanFetch = Date().addingTimeInterval(300)
-            }
-            self.planFetchInFlight = false
-            self.checkThreshold()
-        }
-    }
+    private func didUpdate() {}
 
     // MARK: - Bildirim
 
     func requestNotificationPermission() { notifier.requestAuthorization() }
-
-    private func checkThreshold() {
-        guard settings.alertEnabled else { return }
-        if let w = planLimits?.fiveHour {
-            let key = "official-" + (w.resetsAt.map { String(Int($0.timeIntervalSince1970)) } ?? "none")
-            notifier.check(percent: w.utilization, threshold: settings.alertThreshold, windowKey: key, isEstimate: false)
-        } else if let b = snapshot.currentBlock, let f = b.fractionOfPeakBlock {
-            let key = "estimate-\(Int(b.start.timeIntervalSince1970))"
-            notifier.check(percent: f * 100, threshold: settings.alertThreshold, windowKey: key, isEstimate: true)
-        }
-    }
 
     private func startWatching() {
         let paths = UsageEngine.defaultRoots.map(\.path).filter { FileManager.default.fileExists(atPath: $0) }
@@ -143,21 +101,8 @@ final class AppModel: ObservableObject {
         timer = t
     }
 
-    private var lastPlanLimitsEnabled = false
-
     private func settingsChanged() {
         scheduleTimer()
-        if settings.planLimitsEnabled != lastPlanLimitsEnabled {
-            lastPlanLimitsEnabled = settings.planLimitsEnabled
-            if settings.planLimitsEnabled {
-                nextPlanFetch = .distantPast
-                fetchPlanLimitsIfDue()
-            } else {
-                planLimits = nil
-                planLimitError = nil
-                Task { await planClient.forget() }
-            }
-        }
     }
 
     // MARK: - Fiyat tablosu
@@ -186,7 +131,6 @@ final class AppModel: ObservableObject {
 
     // MARK: - Menü çubuğu metni
 
-    /// Plan limiti verisi yoksa yerel tahmine düşer ("~" ile işaretli).
     func menuBarText(mode: MenuBarMode) -> String {
         switch mode {
         case .iconOnly:
@@ -196,19 +140,8 @@ final class AppModel: ObservableObject {
         case .cost:
             return Format.cost(snapshot.summary(.today).totals.costUSD)
         case .percent:
-            if let p = officialFiveHourPercent { return "\(Int(p.rounded()))%" }
-            if let f = snapshot.currentBlock?.fractionOfPeakBlock { return "~\(Int((f * 100).rounded()))%" }
-            return snapshot.currentBlock == nil ? "0%" : "—"
+            return "—"
         }
-    }
-
-    /// Resmi olmayan uç noktadan gelen 5 saatlik kullanım yüzdesi (varsa).
-    var officialFiveHourPercent: Double? {
-        settings.planLimitsEnabled ? planLimits?.fiveHour?.utilization : nil
-    }
-
-    var displayedFiveHourPercent: Double? {
-        officialFiveHourPercent ?? snapshot.currentBlock?.fractionOfPeakBlock.map { $0 * 100 }
     }
 
     func openPricingFile() {

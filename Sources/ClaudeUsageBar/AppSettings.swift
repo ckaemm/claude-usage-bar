@@ -21,8 +21,6 @@ final class AppSettings: ObservableObject {
     @AppStorage("menuBarMode") var menuBarModeRaw: String = MenuBarMode.tokens.rawValue
     @AppStorage("alertEnabled") var alertEnabled: Bool = false
     @AppStorage("alertThreshold") var alertThreshold: Double = 80
-    /// Resmi olmayan plan limiti uç noktası. Varsayılan KAPALI.
-    @AppStorage("planLimitsEnabled") var planLimitsEnabled: Bool = false
 
     var menuBarMode: MenuBarMode {
         get { MenuBarMode(rawValue: menuBarModeRaw) ?? .tokens }
