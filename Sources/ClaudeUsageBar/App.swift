@@ -35,6 +35,6 @@ enum AppPaths {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return base.appendingPathComponent("ClaudeUsageBar", isDirectory: true)
     }
+    /// Yalnızca `--dump` komutu için: kullanıcı düzenlediyse fiyat tablosu.
     static var pricingURL: URL { supportDir.appendingPathComponent("pricing.json") }
-    static var cacheURL: URL { supportDir.appendingPathComponent("cache.json") }
 }

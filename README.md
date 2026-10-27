@@ -1,17 +1,14 @@
 # Claude Usage Bar
 
-Claude Code kullanımınızı macOS menü çubuğunda gösteren native bir uygulama (Swift + SwiftUI, macOS 13+).
+Claude planınızın **5 saatlik oturum** ve **haftalık** limit yüzdelerini macOS menü çubuğunda gösteren native bir uygulama (Swift + SwiftUI, macOS 13+).
 Her şey yerelde çalışır. Uygulama ağa hiç çıkmaz ve hiçbir veriyi dışarı göndermez.
 
-- Menü çubuğunda ikon ve kısa bir özet: bugünkü token (`114.5M`), maliyet (`$43`), 5 saatlik limit yüzdesi (`23%`) ya da yalnızca ikon.
-- Popover'da şunlar var:
-  - 5 saatlik ve haftalık plan limiti yüzdeleri, sıfırlanmaya geri sayım (Claude Code status line'ından)
-  - Bugün, bu hafta ve bu ay için token ve tahmini maliyet
-  - Model dağılımı (Opus / Sonnet / Haiku / Fable)
-  - Son 7 günün grafiği (Swift Charts)
-  - Yenile butonu ve son güncelleme zamanı
-- Log klasörü FSEvents ile anlık izlenir. Ayrıca ayarlanabilir aralıklarla yenilenir.
-- Ayarlar: yenileme aralığı, menü çubuğu gösterimi, eşik bildirimi, login'de başlatma, Claude Code status line köprüsünü tek tıkla kurma/kaldırma.
+- **Menü çubuğu:** `5s %46 · 7g %19`. Ayarlardan yalnızca 5 saatlik yüzde ya da yalnızca ikon seçilebilir.
+- **Popover:** İki limit için yüzde çubuğu, sıfırlanmaya geri sayım ve son güncelleme zamanı.
+- **Eşik bildirimi:** Örneğin %80 geçildiğinde, her pencere için bir kez.
+- **Diğer ayarlar:** login'de başlatma, Claude Code status line köprüsünü tek tıkla kurma/kaldırma.
+
+Yüzdeler Claude Code'un kendi status line verisinden gelir; uygulama tahmin yapmaz.
 
 ## Gereksinimler
 
@@ -33,7 +30,7 @@ open build/ClaudeUsageBar.app
 open /Applications/ClaudeUsageBar.app
 ```
 
-Plan limiti yüzdeleri için status line köprüsünü kurun (bkz. [Plan limitleri](#2-plan-limitleri-claude-code-status-line)):
+Ardından status line köprüsünü kurun (bkz. [Veri kaynağı](#veri-kaynağı-claude-code-status-line)):
 Menü çubuğu ikonu › ⚙︎ Ayarlar › Claude Code bağlantısı › **Kur**.
 
 Uygulama Dock'ta görünmez (`LSUIElement`); yalnızca menü çubuğunda yaşar. Kapatmak için popover'daki ⏻ butonunu kullanın veya ⌘Q'ya basın.
@@ -42,7 +39,7 @@ Geliştirme sırasında:
 
 ```bash
 swift build && .build/debug/ClaudeUsageBar          # uygulamayı paketlemeden çalıştırır (bildirimler devre dışı)
-.build/debug/ClaudeUsageBar --dump                   # UI açmadan tüm logları tarar, özeti yazdırır
+.build/debug/ClaudeUsageBar --dump                   # terminalde yerel log token özeti (bkz. aşağıda)
 ./test.sh                                            # gizlilik kontrolü + birim testleri (Swift Testing)
 ```
 
@@ -66,23 +63,8 @@ Bu yöntem `SMAppService.mainApp` kullanır. Uygulamayı yeniden derleyip kurduk
 2. "Oturum Açıldığında Aç" listesindeki **+** butonuna basın.
 3. `/Applications/ClaudeUsageBar.app` uygulamasını seçin.
 
-## Veri kaynakları
+## Veri kaynağı: Claude Code status line
 
-### 1) Yerel Claude Code logları (birincil)
-
-`~/.claude/projects/**/*.jsonl` (varsa `~/.config/claude/projects`). Şema gerçek dosyalardan doğrulandı:
-
-- `type: "assistant"` satırları `message.model`, `message.id`, `requestId`, `timestamp` ve şu alanları içeren `message.usage` taşır:
-  - `input_tokens`, `output_tokens`, `cache_read_input_tokens`
-  - `cache_creation_input_tokens` ve 5 dk / 1 sa TTL dökümü (`cache_creation.ephemeral_5m/1h_input_tokens`)
-  - `speed`
-- Claude Code, bir yanıtın her içerik bloğunu (thinking, text, tool_use) **ayrı satır** olarak yazar ve her satıra aynı usage'ı kopyalar. Bu yüzden kayıtlar `message.id:requestId` ile tekilleştirilir; [ccusage](https://github.com/ryoppippi/ccusage) da aynı yaklaşımı kullanır. Örnek: 5458 satır, 2423 tekil yanıt.
-- `type: "cost-state"` satırları oturumun kümülatif model kullanımını tutar. Assistant satırlarında hiç görünmeyen iç çağrılar (ör. Haiku) buradan eklenir. Zamanları oturumun son etkinliğine göre yaklaşıktır.
-- `<synthetic>` model satırları ve bozuk satırlar atlanır.
-
-Tarama artımlıdır: dosya başına okunan bayt ofseti tutulur, yalnızca yeni eklenen satırlar okunur ve yazılmakta olan yarım satır bekletilir. Sonuçlar `~/Library/Application Support/ClaudeUsageBar/cache.json` dosyasında saklanır. Bu dosyada yalnızca sayılar, kimlikler ve dosya yolları bulunur, mesaj içeriği yoktur. 300 MB log ilk açılışta yaklaşık 2 sn'de taranır, sonraki taramalar milisaniyeler sürer.
-
-### 2) Plan limitleri (Claude Code status line)
 
 5 saatlik oturum ve haftalık limit yüzdeleri, Claude Code'un [status line](https://code.claude.com/docs/en/statusline) mekanizmasından gelir. Claude Code, status line script'ine stdin üzerinden bir JSON gönderir. Bu JSON'daki ilgili alanlar şunlardır (şema resmi dokümandan doğrulandı):
 
@@ -137,33 +119,26 @@ Kurulum sırasında:
 
 Not: Claude Code, özel bir status line tanımlandığında alt bilgideki bazı ipuçlarını (`esc to interrupt`, `? for shortcuts`) gizler.
 
-### Arayüzdeki etiketler
+**"Claude Code çalışırken güncellenir"** notu: Limit verisi yok ya da 15 dakikadan eski. Yüzdeler yalnızca Claude Code çalışırken yenilenir. Veri yoksa menü çubuğunda `—` görünür.
 
-| Etiket | Anlamı |
-|---|---|
-| **maliyetler tahmini** | Token sayıları × `pricing.json`'daki API liste fiyatları. Abonelik (Pro/Max) faturanızı yansıtmaz. |
-| **Claude Code çalışırken güncellenir** | Limit verisi yok ya da 15 dakikadan eski. Yüzdeler, Claude Code'un status line'a verdiği değerlerdir; yalnızca Claude Code çalışırken yenilenir. |
+## Terminalde token özeti (`--dump`)
 
-Limit verisi yoksa menü çubuğundaki yüzde modu `—` gösterir. Uygulama kendi yüzde tahminini üretmez.
+Uygulama arayüzde token veya maliyet göstermez. İsterseniz yerel Claude Code loglarından bir özeti terminalde alabilirsiniz:
 
-## Fiyat tablosu
-
-İlk açılışta `~/Library/Application Support/ClaudeUsageBar/pricing.json` dosyası oluşturulur. Fiyatlar 1M token başına USD'dir:
-
-```json
-"claude-opus-5-5": { "input": 4, "output": 20, "cacheWrite5m": 5, "cacheWrite1h": 8, "cacheRead": 0.2, "fastMultiplier": 2 }
+```bash
+build/ClaudeUsageBar.app/Contents/MacOS/ClaudeUsageBar --dump
 ```
 
-- Model eşleme sırası: tam ad, sonra en uzun önek (tarih ekli kimlikler için), sonra `familyFallback` (ör. bilinmeyen bir Opus sürümü `claude-opus-5-5` fiyatını alır).
-- Dosyayı düzenlediğinizde değişiklik bir sonraki yenilemede uygulanır. Dosya bozuksa varsayılan fiyatlar kullanılır ve popover'da uyarı çıkar.
-- Varsayılan fiyatlar Anthropic API liste fiyatlarıdır (Ekim 2026). Bir oturumda Claude Code'un kendi hesapladığı maliyetle (`cost-state.costUSD`) birebir doğrulandı.
+Bu komut `~/.claude/projects/**/*.jsonl` dosyalarını bir kez tarar, bugün/hafta/ay toplamlarını ve API liste fiyatlarıyla hesaplanmış tahmini maliyeti yazdırır.
+
+- Claude Code bir yanıtın her içerik bloğunu ayrı satıra yazar ve aynı usage'ı tekrar eder. Bu yüzden kayıtlar `message.id:requestId` ile tekilleştirilir; ccusage da aynı yaklaşımı kullanır.
+- Fiyatlar `PricingTable.defaultJSON` içindedir (USD / 1M token). `~/Library/Application Support/ClaudeUsageBar/pricing.json` varsa o kullanılır.
 
 ## Gizlilik
 
 - Uygulama ağa hiç çıkmaz. Hiçbir veri, token veya log dışarı gönderilmez. Keychain'e erişilmez.
-- Okunan dosyalar: `~/.claude/projects/**/*.jsonl` ve `~/.claude-usage-bar/limits/*.json`.
+- Uygulamanın okuduğu dosyalar: yalnızca `~/.claude-usage-bar/limits/*.json`. Loglar yalnızca `--dump` komutunda okunur.
 - Yazılan dosyalar:
-  - `~/Library/Application Support/ClaudeUsageBar/` (önbellek ve fiyat tablosu)
   - `~/.claude-usage-bar/` (köprü script'i ve limit verisi)
   - Kurulum sırasında `~/.claude/settings.json` içindeki `statusLine` anahtarı
 - `./test.sh`, kaynak kodda `URLSession`, `URLRequest`, `Network`, `Security` veya `SecItem` kullanımı bulursa başarısız olur.
@@ -176,14 +151,15 @@ Package.swift
 build.sh, test.sh
 Resources/Info.plist
 Sources/UsageCore/          UI'sız çekirdek (test edilebilir)
+  StatusLineLimits.swift    status line rate_limits modeli, oturumların birleştirilmesi
+  StatusLineInstaller.swift köprü script'i + settings.json kurulum/kaldırma
+  --- yalnızca --dump için ---
   LogParser.swift           JSONL satırı → UsageEntry / SessionCostState
   IncrementalScanner.swift  dosya başına ofset ile artımlı okuma
   UsageStore.swift          tekilleştirme + cost-state ekleri
   Aggregation.swift         bugün/hafta/ay, 7 gün, model ailesi
-  Pricing.swift             düzenlenebilir fiyat tablosu
-  StatusLineLimits.swift    status line rate_limits modeli, oturumların birleştirilmesi
-  StatusLineInstaller.swift köprü script'i + settings.json kurulum/kaldırma
-  UsageEngine.swift         arka plan aktörü + disk önbelleği
+  Pricing.swift             fiyat tablosu
+  UsageEngine.swift         tarama motoru
 Sources/ClaudeUsageBar/     SwiftUI uygulaması (MenuBarExtra, ayarlar, FSEvents, bildirimler)
 Tests/UsageCoreTests/       Swift Testing; Fixtures/ gerçek bir oturumdan alınmış, içeriği temizlenmiş veri
 ```
@@ -191,6 +167,4 @@ Tests/UsageCoreTests/       Swift Testing; Fixtures/ gerçek bir oturumdan alın
 ## Bilinen sınırlamalar
 
 - Plan limiti yüzdeleri yalnızca Claude Code çalışırken güncellenir; Claude Code kapalıyken son bilinen değer "x dk önce" notuyla gösterilir.
-- Log biçimi Claude Code sürümleriyle değişebilir. Parser bilinmeyen alanları yok sayar; okunamayan satır sayısı Ayarlar › Veri bölümünde görünür.
-- Haiku 5.5'in 100K token üstü istem fiyatlandırması modellenmemiştir.
-- Silinen log dosyalarındaki kullanım önbellekte kalır. "Önbelleği sıfırla ve yeniden tara" ile temizlenebilir.
+- `rate_limits` alanı API anahtarıyla girişte gelmez; bu durumda uygulama yüzde gösteremez.

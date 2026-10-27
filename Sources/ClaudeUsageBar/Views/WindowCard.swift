@@ -10,7 +10,6 @@ struct WindowCard: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             let now = context.date
             VStack(alignment: .leading, spacing: 8) {
-                Text("Plan limitleri").font(.subheadline.weight(.semibold))
                 if let limits = model.limits {
                     if let w = limits.fiveHour { row("5 saatlik oturum", w, now: now) }
                     if let w = limits.sevenDay { row("Haftalık", w, now: now) }
@@ -52,7 +51,7 @@ struct WindowCard: View {
             HStack {
                 Text(title).font(.caption)
                 Spacer()
-                Text(expired ? "—" : "\(Int(w.usedPercentage.rounded()))%")
+                Text(expired ? "—" : "%\(Int(w.usedPercentage.rounded()))")
                     .font(.caption.monospacedDigit().weight(.semibold))
             }
             UsageBar(fraction: expired ? 0 : w.usedPercentage / 100)

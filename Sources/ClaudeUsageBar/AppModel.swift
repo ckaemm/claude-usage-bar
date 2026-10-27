@@ -3,87 +3,38 @@ import Foundation
 import SwiftUI
 import UsageCore
 
+/// Claude Code status line'ından gelen 5 saatlik ve haftalık limit yüzdelerini izler.
 @MainActor
 final class AppModel: ObservableObject {
-    @Published private(set) var snapshot: UsageSnapshot = .empty
-    @Published private(set) var isRefreshing = false
-    @Published private(set) var lastUpdated: Date?
-    @Published private(set) var pricingError: String?
-    /// Claude Code status line'ından gelen 5 saatlik / haftalık limitler (yoksa nil).
+    /// Tüm oturum dosyalarının birleşimi (yoksa nil).
     @Published private(set) var limits: StatusLineLimits?
     @Published private(set) var statusLineStatus: StatusLineInstaller.Status = .notInstalled(existingCommand: nil)
     @Published var statusLineMessage: String?
+    /// Menü çubuğu metninin süresi dolan pencereleri ve "eski" durumunu yakalaması için.
+    @Published private(set) var now = Date()
 
     let settings = AppSettings()
-
-    private let engine = UsageEngine(roots: UsageEngine.defaultRoots, cacheURL: AppPaths.cacheURL)
-    private var watcher: FileWatcher?
-    private var limitsWatcher: FileWatcher?
     let installer = StatusLineInstaller.default
+
+    private var limitsWatcher: FileWatcher?
     private var timer: Timer?
-    private var pendingRefresh = false
-    private var pricing: PricingTable = .default
-    private var pricingModified: Date?
-    private var cancellables: Set<AnyCancellable> = []
     private let notifier = Notifier()
+    private var cancellables: Set<AnyCancellable> = []
 
     init() {
-        ensurePricingFile()
-        startWatching()
         startWatchingLimits()
         reloadStatusLineStatus()
-        scheduleTimer()
+        startTimer()
         settings.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] in
                 // AppStorage değişiklikleri willChange ile gelir; değer bir sonraki döngüde okunur.
-                DispatchQueue.main.async { self?.settingsChanged() }
+                DispatchQueue.main.async { self?.checkThreshold() }
             }
             .store(in: &cancellables)
-        refresh()
     }
 
-    // MARK: - Yenileme
-
-    func refresh() {
-        guard !isRefreshing else { pendingRefresh = true; return }
-        isRefreshing = true
-        reloadPricingIfNeeded()
-        let pricing = self.pricing
-        Task {
-            let snap = await engine.refresh(pricing: pricing)
-            self.apply(snap)
-        }
-    }
-
-    /// Önbelleği silip tüm logları baştan okur.
-    func rebuild() {
-        guard !isRefreshing else { return }
-        isRefreshing = true
-        reloadPricingIfNeeded(force: true)
-        let pricing = self.pricing
-        Task {
-            let snap = await engine.rebuild(pricing: pricing)
-            self.apply(snap)
-        }
-    }
-
-    private func apply(_ snap: UsageSnapshot) {
-        snapshot = snap
-        lastUpdated = snap.generatedAt
-        isRefreshing = false
-        didUpdate()
-        if pendingRefresh {
-            pendingRefresh = false
-            refresh()
-        }
-    }
-
-    private func didUpdate() {
-        reloadLimits()
-    }
-
-    // MARK: - Plan limitleri (Claude Code status line → ~/.claude-usage-bar/limits/<oturum>.json)
+    // MARK: - Limitler (~/.claude-usage-bar/limits/<oturum>.json)
 
     private func startWatchingLimits() {
         try? installer.prepareSupportDir() // rename olaylarını yakalamak için klasör izlenir
@@ -100,13 +51,37 @@ final class AppModel: ObservableObject {
     func reloadLimits() {
         let l = StatusLineLimits.loadDirectory(installer.limitsDir)
         if l != limits { limits = l }
+        now = Date()
         checkThreshold()
     }
 
-    /// Geçerli (süresi dolmamış) 5 saatlik pencere.
-    func fiveHour(at now: Date = Date()) -> RateLimitWindow? {
-        guard let w = limits?.fiveHour, !w.isExpired(at: now) else { return nil }
+    /// Veri dosyaya yazıldıkça gelir; zamanlayıcı yalnızca sıfırlanma ve "eski" durumunu günceller.
+    private func startTimer() {
+        let t = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.reloadLimits() }
+        }
+        t.tolerance = 5
+        RunLoop.main.add(t, forMode: .common) // popover açıkken de çalışsın
+        timer = t
+    }
+
+    /// Süresi dolmamış pencere; dolduysa nil.
+    private func current(_ w: RateLimitWindow?) -> RateLimitWindow? {
+        guard let w, !w.isExpired(at: now) else { return nil }
         return w
+    }
+
+    // MARK: - Menü çubuğu metni
+
+    func menuBarText(mode: MenuBarMode) -> String {
+        func pct(_ w: RateLimitWindow?) -> String {
+            current(w).map { "%\(Int($0.usedPercentage.rounded()))" } ?? "—"
+        }
+        switch mode {
+        case .iconOnly: return ""
+        case .fiveHour: return pct(limits?.fiveHour)
+        case .both: return "5s \(pct(limits?.fiveHour)) · 7g \(pct(limits?.sevenDay))"
+        }
     }
 
     // MARK: - Status line kurulumu
@@ -154,108 +129,18 @@ final class AppModel: ObservableObject {
 
     func requestNotificationPermission() { notifier.requestAuthorization() }
 
-    /// Eşik uyarıları yalnızca status line verisiyle ve güncel veriyle çalışır.
+    /// Eşik uyarıları yalnızca güncel veriyle çalışır.
     private func checkThreshold() {
-        guard settings.alertEnabled, let l = limits, !l.isStale(at: Date()) else { return }
-        let now = Date()
+        guard settings.alertEnabled, let l = limits, !l.isStale(at: now) else { return }
         for (name, w) in [("5 saatlik oturum", l.fiveHour), ("Haftalık", l.sevenDay)] {
-            guard let w, !w.isExpired(at: now) else { continue }
+            guard let w = current(w) else { continue }
             notifier.check(window: name, percent: w.usedPercentage, threshold: settings.alertThreshold,
                            resetsAt: w.resetsAt)
         }
     }
-
-    private func startWatching() {
-        let paths = UsageEngine.defaultRoots.map(\.path).filter { FileManager.default.fileExists(atPath: $0) }
-        let watcher = FileWatcher(paths: paths) { [weak self] in
-            Task { @MainActor in self?.refresh() }
-        }
-        watcher.start()
-        self.watcher = watcher
-    }
-
-    private var scheduledInterval: Double = 0
-
-    private func scheduleTimer() {
-        let interval = max(15, settings.refreshInterval)
-        guard interval != scheduledInterval else { return }
-        scheduledInterval = interval
-        timer?.invalidate()
-        let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
-        }
-        t.tolerance = interval * 0.1
-        RunLoop.main.add(t, forMode: .common) // popover açıkken de çalışsın
-        timer = t
-    }
-
-    private func settingsChanged() {
-        scheduleTimer()
-        checkThreshold()
-    }
-
-    // MARK: - Fiyat tablosu
-
-    private func ensurePricingFile() {
-        let fm = FileManager.default
-        try? fm.createDirectory(at: AppPaths.supportDir, withIntermediateDirectories: true)
-        if !fm.fileExists(atPath: AppPaths.pricingURL.path) {
-            try? Data(PricingTable.defaultJSON.utf8).write(to: AppPaths.pricingURL, options: .atomic)
-        }
-    }
-
-    private func reloadPricingIfNeeded(force: Bool = false) {
-        let url = AppPaths.pricingURL
-        let mtime = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
-        guard force || mtime != pricingModified else { return }
-        pricingModified = mtime
-        do {
-            pricing = try PricingTable.load(from: url)
-            pricingError = nil
-        } catch {
-            pricing = .default
-            pricingError = "pricing.json okunamadı; varsayılan fiyatlar kullanılıyor."
-        }
-    }
-
-    // MARK: - Menü çubuğu metni
-
-    func menuBarText(mode: MenuBarMode) -> String {
-        switch mode {
-        case .iconOnly:
-            return ""
-        case .tokens:
-            return Format.tokens(snapshot.summary(.today).totals.totalTokens)
-        case .cost:
-            return Format.cost(snapshot.summary(.today).totals.costUSD)
-        case .percent:
-            guard let w = fiveHour() else { return "—" }
-            return "\(Int(w.usedPercentage.rounded()))%"
-        }
-    }
-
-    func openPricingFile() {
-        ensurePricingFile()
-        NSWorkspace.shared.activateFileViewerSelecting([AppPaths.pricingURL])
-    }
 }
 
 enum Format {
-    static func tokens(_ n: Int) -> String {
-        let d = Double(n)
-        switch n {
-        case ..<1_000: return "\(n)"
-        case ..<1_000_000: return String(format: d < 10_000 ? "%.1fK" : "%.0fK", d / 1_000)
-        case ..<1_000_000_000: return String(format: d < 10_000_000 ? "%.2fM" : "%.1fM", d / 1_000_000)
-        default: return String(format: "%.2fB", d / 1_000_000_000)
-        }
-    }
-
-    static func cost(_ c: Double) -> String {
-        if c > 0 && c < 0.01 { return "<$0.01" }
-        return c < 10 ? String(format: "$%.2f", c) : String(format: "$%.0f", c)
-    }
-
     static func countdown(to date: Date, from now: Date = Date()) -> String {
         let s = max(0, Int(date.timeIntervalSince(now)))
         let d = s / 86400, h = (s % 86400) / 3600, m = (s % 3600) / 60

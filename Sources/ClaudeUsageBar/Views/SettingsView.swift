@@ -40,13 +40,6 @@ struct SettingsView: View {
                     get: { settings.menuBarMode }, set: { settings.menuBarMode = $0 })) {
                     ForEach(MenuBarMode.allCases) { Text($0.title).tag($0) }
                 }
-                Picker("Yenileme aralığı", selection: $settings.refreshInterval) {
-                    ForEach(AppSettings.refreshChoices, id: \.self) { s in
-                        Text(s < 60 ? "\(Int(s)) sn" : "\(Int(s / 60)) dk").tag(s)
-                    }
-                }
-                Text("Log dosyaları ayrıca anlık izlenir; değişiklikten ~1 sn sonra güncellenir.")
-                    .font(.caption).foregroundStyle(.secondary)
                 Toggle("Login'de otomatik başlat", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { on in
                         loginMessage = LoginItem.set(enabled: on)
@@ -88,18 +81,6 @@ struct SettingsView: View {
                 .disabled(!settings.alertEnabled)
                 Text("5 saatlik ve haftalık limit yüzdelerine göre; pencere başına bir bildirim.")
                     .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section("Veri") {
-                HStack {
-                    Button("Fiyat tablosunu göster") { model.openPricingFile() }
-                    Button("Önbelleği sıfırla ve yeniden tara") { model.rebuild() }
-                }
-                Text("Fiyatlar ~/Library/Application Support/ClaudeUsageBar/pricing.json dosyasındadır (USD / 1M token). Dosyayı düzenlediğinizde bir sonraki yenilemede uygulanır.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Tekil mesaj: \(model.snapshot.entryCount.formatted()) · Okunamayan satır: \(model.snapshot.malformedLines)")
-                    .font(.caption).foregroundStyle(.tertiary)
             }
         }
         .formStyle(.grouped)
