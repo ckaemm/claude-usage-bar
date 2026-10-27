@@ -141,6 +141,10 @@ Tests/UsageCoreTests/         Swift Testing testleri
 build.sh, test.sh             derleme ve test script'leri
 ```
 
+## Lisans
+
+[MIT](LICENSE)
+
 ---
 
 Bu proje Anthropic ile bağlantılı değildir. "Claude" ve "Claude Code", Anthropic'in ürünleridir.
