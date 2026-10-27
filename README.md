@@ -1,17 +1,17 @@
 # Claude Usage Bar
 
 Claude Code kullanımınızı macOS menü çubuğunda gösteren native bir uygulama (Swift + SwiftUI, macOS 13+).
-Her şey yerelde çalışır. Varsayılan olarak hiçbir veri dışarı gönderilmez.
+Her şey yerelde çalışır. Uygulama ağa hiç çıkmaz ve hiçbir veriyi dışarı göndermez.
 
-- Menü çubuğunda ikon ve kısa bir özet: bugünkü token (`114.5M`), maliyet (`$43`), 5 saatlik pencere yüzdesi (`~56%`) ya da yalnızca ikon.
+- Menü çubuğunda ikon ve kısa bir özet: bugünkü token (`114.5M`), maliyet (`$43`), 5 saatlik limit yüzdesi (`23%`) ya da yalnızca ikon.
 - Popover'da şunlar var:
-  - 5 saatlik pencere ve geri sayım
+  - 5 saatlik ve haftalık plan limiti yüzdeleri, sıfırlanmaya geri sayım (Claude Code status line'ından)
   - Bugün, bu hafta ve bu ay için token ve tahmini maliyet
   - Model dağılımı (Opus / Sonnet / Haiku / Fable)
   - Son 7 günün grafiği (Swift Charts)
   - Yenile butonu ve son güncelleme zamanı
 - Log klasörü FSEvents ile anlık izlenir. Ayrıca ayarlanabilir aralıklarla yenilenir.
-- Ayarlar: yenileme aralığı, menü çubuğu gösterimi, eşik bildirimi, login'de başlatma, opsiyonel plan limitleri.
+- Ayarlar: yenileme aralığı, menü çubuğu gösterimi, eşik bildirimi, login'de başlatma, Claude Code status line köprüsünü tek tıkla kurma/kaldırma.
 
 ## Gereksinimler
 
@@ -33,6 +33,9 @@ open build/ClaudeUsageBar.app
 open /Applications/ClaudeUsageBar.app
 ```
 
+Plan limiti yüzdeleri için status line köprüsünü kurun (bkz. [Plan limitleri](#2-plan-limitleri-claude-code-status-line)):
+Menü çubuğu ikonu › ⚙︎ Ayarlar › Claude Code bağlantısı › **Kur**.
+
 Uygulama Dock'ta görünmez (`LSUIElement`); yalnızca menü çubuğunda yaşar. Kapatmak için popover'daki ⏻ butonunu kullanın veya ⌘Q'ya basın.
 
 Geliştirme sırasında:
@@ -40,7 +43,7 @@ Geliştirme sırasında:
 ```bash
 swift build && .build/debug/ClaudeUsageBar          # uygulamayı paketlemeden çalıştırır (bildirimler devre dışı)
 .build/debug/ClaudeUsageBar --dump                   # UI açmadan tüm logları tarar, özeti yazdırır
-./test.sh                                            # birim testleri (Swift Testing)
+./test.sh                                            # gizlilik kontrolü + birim testleri (Swift Testing)
 ```
 
 > `test.sh`, yalnızca Command Line Tools kurulu makinelerde `swift test` Swift Testing testlerini
@@ -79,24 +82,65 @@ Bu yöntem `SMAppService.mainApp` kullanır. Uygulamayı yeniden derleyip kurduk
 
 Tarama artımlıdır: dosya başına okunan bayt ofseti tutulur, yalnızca yeni eklenen satırlar okunur ve yazılmakta olan yarım satır bekletilir. Sonuçlar `~/Library/Application Support/ClaudeUsageBar/cache.json` dosyasında saklanır. Bu dosyada yalnızca sayılar, kimlikler ve dosya yolları bulunur, mesaj içeriği yoktur. 300 MB log ilk açılışta yaklaşık 2 sn'de taranır, sonraki taramalar milisaniyeler sürer.
 
-### 2) Plan limitleri (resmi değil, varsayılan KAPALI)
+### 2) Plan limitleri (Claude Code status line)
 
-Ayarlar › **Plan limitlerini göster (resmi değil)** seçeneği açıldığında uygulama, Claude Code'un kullandığı belgelenmemiş `https://api.anthropic.com/api/oauth/usage` uç noktasından 5 saatlik ve haftalık kullanım yüzdelerini alır.
+5 saatlik oturum ve haftalık limit yüzdeleri, Claude Code'un [status line](https://code.claude.com/docs/en/statusline) mekanizmasından gelir. Claude Code, status line script'ine stdin üzerinden bir JSON gönderir. Bu JSON'daki ilgili alanlar şunlardır (şema resmi dokümandan doğrulandı):
 
-- Token yalnızca macOS Keychain'deki `Claude Code-credentials` öğesinden okunur ve macOS bunun için izin sorar.
-- Token yalnızca bellekte tutulur. Diske yazılmaz, loglanmaz ve api.anthropic.com dışında hiçbir yere gönderilmez.
-- Uç nokta her an değişebilir. Başarısız olursa uygulama yerel verilerle çalışmaya devam eder ve 5 dk sonra yeniden dener.
-- Ad-hoc imzalı derlemelerde, her yeniden derlemeden sonra Keychain izni tekrar sorulabilir.
+```json
+"rate_limits": {
+  "five_hour": { "used_percentage": 23.5, "resets_at": 1738425600 },
+  "seven_day": { "used_percentage": 41.2, "resets_at": 1738857600 }
+}
+```
+
+- `used_percentage` 0–100 arası bir sayıdır. `resets_at` Unix epoch saniyesidir.
+- `rate_limits` yalnızca **claude.ai Pro/Max** girişinde ve oturumdaki ilk API yanıtından sonra gelir. **API anahtarıyla girişte hiç gelmez.**
+- Pencereler ayrı ayrı eksik olabilir. Claude Code, `resets_at` zamanı geçen pencereyi JSON'dan çıkarır.
+- Status line API token'ı harcamaz.
+
+**Nasıl çalışır:** Kurulum, `~/.claude-usage-bar/statusline.sh` köprü script'ini `~/.claude/settings.json` içindeki `statusLine` ayarına bağlar.
+
+- Script bağımlılık kullanmaz; saf bash'tir ve çağrı başına yaklaşık 10 ms sürer.
+- Girdide `rate_limits` varsa JSON'u `~/.claude-usage-bar/limits.json` dosyasına **atomik** yazar: önce geçici dosyaya yazar, sonra `mv` ile taşır. Dosya izni `0600` olur.
+- `rate_limits` içermeyen girdiler (API anahtarlı oturum, ilk yanıttan önceki çağrılar) mevcut veriyi ezmez.
+- Hiçbir hatada çıktıyı bozmaz ve her zaman 0 koduyla çıkar.
+- Claude Code'un alt satırında `5s %23 · 7g %41` gösterir.
+- Uygulama `~/.claude-usage-bar` klasörünü FSEvents ile izler. Yüzdeler ve geri sayım bu dosyadan hesaplanır.
+- Dosya yoksa veya veri 15 dakikadan eskiyse kartta **"Claude Code çalışırken güncellenir"** notu çıkar. Claude Code kapalıyken veri güncellenmez.
+
+**Kurulum ve kaldırma**
+
+- Uygulamada: Ayarlar › Claude Code bağlantısı › **Kur** / **Kaldır**.
+- Terminalde:
+
+  ```bash
+  build/ClaudeUsageBar.app/Contents/MacOS/ClaudeUsageBar --install-statusline
+  build/ClaudeUsageBar.app/Contents/MacOS/ClaudeUsageBar --uninstall-statusline
+  ```
+
+Kurulum sırasında:
+
+- `settings.json` içinde **yalnızca** `statusLine` anahtarı değişir. Önce `~/.claude-usage-bar/settings.backup.json` adıyla yedek alınır.
+- Dosya geçerli JSON değilse kurulum hiçbir şeye dokunmadan durur.
+- Not: Dosya yeniden yazılırken anahtarlar alfabetik sıraya girer ve dosya biçimlenir. İçerik değişmez.
+
+**Zaten bir status line'ınız varsa:**
+
+- Kurulum üzerine yazmaz; önce onay ister. Terminalde onay için `--wrap` bayrağını ekleyin: `--install-statusline --wrap`.
+- Onay verirseniz script önce mevcut komutunuzu aynı girdiyle çalıştırır ve onun çıktısını aynen gösterir. Limit verisini de ayrıca kaydeder.
+- Eski ayarın `padding`, `refreshInterval` gibi alanları korunur.
+- **Kaldır** eski ayarı olduğu gibi geri yükler. Status line'ı sonradan elle değiştirdiyseniz kaldırma `settings.json`'a dokunmaz.
+
+Not: Claude Code, özel bir status line tanımlandığında alt bilgideki bazı ipuçlarını (`esc to interrupt`, `? for shortcuts`) gizler.
 
 ### Arayüzdeki etiketler
 
 | Etiket | Anlamı |
 |---|---|
 | **maliyetler tahmini** | Token sayıları × `pricing.json`'daki API liste fiyatları. Abonelik (Pro/Max) faturanızı yansıtmaz. |
-| **tahmini** (5 sa pencere) | Yerel hesap: pencere ilk mesajın saatinde başlar ve 5 saat sürer. Yüzde, geçmişteki en yüksek maliyetli 5 saatlik bloğa oranlanır. Sunucudaki gerçek pencere ve limitle birebir değildir. |
-| **resmi değil** | Belgelenmemiş uç noktadan gelen plan limiti verisi. |
+| **Claude Code çalışırken güncellenir** | Limit verisi yok ya da 15 dakikadan eski. Yüzdeler, Claude Code'un status line'a verdiği değerlerdir; yalnızca Claude Code çalışırken yenilenir. |
 
-Menü çubuğundaki `~42%` biçimindeki `~` işareti, yüzdenin yerel tahmin olduğunu gösterir.
+Limit verisi yoksa menü çubuğundaki yüzde modu `—` gösterir. Uygulama kendi yüzde tahminini üretmez.
 
 ## Fiyat tablosu
 
@@ -112,7 +156,13 @@ Menü çubuğundaki `~42%` biçimindeki `~` işareti, yüzdenin yerel tahmin old
 
 ## Gizlilik
 
-- Varsayılan olarak hiçbir ağ isteği yapılmaz. Tek istisna, açıkça açıldığında plan limiti isteğidir.
+- Uygulama ağa hiç çıkmaz. Hiçbir veri, token veya log dışarı gönderilmez. Keychain'e erişilmez.
+- Okunan dosyalar: `~/.claude/projects/**/*.jsonl` ve `~/.claude-usage-bar/limits.json`.
+- Yazılan dosyalar:
+  - `~/Library/Application Support/ClaudeUsageBar/` (önbellek ve fiyat tablosu)
+  - `~/.claude-usage-bar/` (köprü script'i ve limit verisi)
+  - Kurulum sırasında `~/.claude/settings.json` içindeki `statusLine` anahtarı
+- `./test.sh`, kaynak kodda `URLSession`, `URLRequest`, `Network`, `Security` veya `SecItem` kullanımı bulursa başarısız olur.
 - Telemetri, analitik ve üçüncü taraf bağımlılık yoktur.
 
 ## Proje yapısı
@@ -126,16 +176,17 @@ Sources/UsageCore/          UI'sız çekirdek (test edilebilir)
   IncrementalScanner.swift  dosya başına ofset ile artımlı okuma
   UsageStore.swift          tekilleştirme + cost-state ekleri
   Aggregation.swift         bugün/hafta/ay, 7 gün, model ailesi
-  SessionBlocks.swift       yerel 5 saatlik pencere tahmini
   Pricing.swift             düzenlenebilir fiyat tablosu
-  PlanLimits.swift          resmi olmayan uç nokta yanıt modeli
+  StatusLineLimits.swift    status line rate_limits modeli (limits.json)
+  StatusLineInstaller.swift köprü script'i + settings.json kurulum/kaldırma
   UsageEngine.swift         arka plan aktörü + disk önbelleği
-Sources/ClaudeUsageBar/     SwiftUI uygulaması (MenuBarExtra, ayarlar, FSEvents, Keychain, bildirimler)
+Sources/ClaudeUsageBar/     SwiftUI uygulaması (MenuBarExtra, ayarlar, FSEvents, bildirimler)
 Tests/UsageCoreTests/       Swift Testing; Fixtures/ gerçek bir oturumdan alınmış, içeriği temizlenmiş veri
 ```
 
 ## Bilinen sınırlamalar
 
+- Plan limiti yüzdeleri yalnızca Claude Code çalışırken güncellenir; Claude Code kapalıyken son bilinen değer "x dk önce" notuyla gösterilir.
 - Log biçimi Claude Code sürümleriyle değişebilir. Parser bilinmeyen alanları yok sayar; okunamayan satır sayısı Ayarlar › Veri bölümünde görünür.
 - Haiku 5.5'in 100K token üstü istem fiyatlandırması modellenmemiştir.
 - Silinen log dosyalarındaki kullanım önbellekte kalır. "Önbelleği sıfırla ve yeniden tara" ile temizlenebilir.

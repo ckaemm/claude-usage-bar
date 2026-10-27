@@ -20,6 +20,25 @@ if CommandLine.arguments.contains("--dump") {
         exit(0)
     }
     dispatchMain()
+} else if CommandLine.arguments.contains("--install-statusline") || CommandLine.arguments.contains("--uninstall-statusline") {
+    // Terminalden kurulum/kaldırma. Mevcut bir status line'ı sarmalamak için --wrap gerekir.
+    let installer = StatusLineInstaller.default
+    do {
+        if CommandLine.arguments.contains("--uninstall-statusline") {
+            try installer.uninstall()
+            print("Status line köprüsü kaldırıldı.")
+        } else {
+            try installer.install(confirmedWrapping: CommandLine.arguments.contains("--wrap"))
+            print("Status line köprüsü kuruldu: \(installer.scriptURL.path)")
+        }
+        exit(0)
+    } catch StatusLineInstaller.InstallError.needsConfirmation(let cmd) {
+        print("Mevcut bir status line var: \(cmd)\nÜzerine yazılmadı. Sarmalamak için: --install-statusline --wrap")
+        exit(1)
+    } catch {
+        print("Hata: \(error.localizedDescription)")
+        exit(1)
+    }
 } else {
     ClaudeUsageBarApp.main()
 }

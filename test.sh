@@ -3,6 +3,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Gizlilik koruması: uygulama ağa çıkmaz ve Keychain'e erişmez.
+if grep -rnE 'URLSession|URLRequest|NSURLConnection|import Network|import Security|SecItem' Sources; then
+    echo "✘ Kaynak kodda ağ veya Keychain erişimi bulundu (yukarıda). Uygulama hiçbir veriyi dışarı göndermemeli." >&2
+    exit 1
+fi
+
 swift build --build-tests
 BIN_DIR="$(swift build --show-bin-path)"
 BUNDLE="$BIN_DIR/ClaudeUsageBarPackageTests.xctest/Contents/MacOS/ClaudeUsageBarPackageTests"
